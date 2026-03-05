@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Observatorio VPG</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#050008;color:#f0e6ff;font-family:'Segoe UI',system-ui,sans-serif;overflow-x:hidden}
+
+/* HERO */
+#hero{position:relative;height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#hero-bg{position:absolute;inset:0;background:linear-gradient(160deg,#4a148c 0%,#7b1fa2 20%,#b71c1c 55%,#1a0005 85%,#000 100%)}
+#hero-canvas{position:absolute;inset:0;opacity:.5}
+#hero-content{position:relative;z-index:2;text-align:center;padding:0 24px}
+#hero h1{font-size:clamp(1.4rem,4vw,3rem);font-weight:900;letter-spacing:-.02em;text-shadow:0 0 40px #b71c1caa;line-height:1.1}
+#hero h1 span{color:#ff6d6d}
+#hero p{margin-top:1rem;font-size:clamp(.82rem,1.5vw,1.05rem);opacity:.78;max-width:580px;margin-inline:auto;line-height:1.6}
+.hero-stats{display:flex;gap:1.8rem;justify-content:center;margin-top:2rem;flex-wrap:wrap}
+.hero-stat .val{font-size:clamp(1.5rem,3.2vw,2.4rem);font-weight:900;color:#ff6d6d}
+.hero-stat .lbl{font-size:.65rem;opacity:.5;text-transform:uppercase;letter-spacing:.08em}
+.scroll-hint{position:absolute;bottom:1.8rem;left:50%;transform:translateX(-50%);opacity:.35;font-size:.72rem;animation:bob 2s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(7px)}}
+
+/* LAYOUT */
+#main{max-width:1380px;margin:0 auto;padding:2rem 1.4rem}
+section{margin-bottom:2.8rem}
+
+/* REVEAL */
+.reveal{opacity:0;transform:translateY(32px);transition:opacity .65s ease,transform .65s ease}
+.reveal.visible{opacity:1;transform:none}
+.reveal.slide-left{transform:translateX(-32px)}
+.reveal.slide-right{transform:translateX(32px)}
+.reveal.slide-left.visible,.reveal.slide-right.visible{transform:none}
+
+h2.sec-title{font-size:clamp(1rem,2vw,1.45rem);font-weight:800;border-left:4px solid #b71c1c;padding-left:1rem;margin-bottom:1.4rem;color:#ffcdd2}
+.card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:1.3rem;transition:border-color .3s}
+.card:hover{border-color:rgba(183,28,28,.3)}
+
+/* FILTERS */
+.filter-bar{display:flex;gap:.7rem;flex-wrap:wrap;margin-bottom:1.4rem;align-items:center}
+.filter-bar label{font-size:.7rem;opacity:.5;text-transform:uppercase;letter-spacing:.07em;margin-right:.2rem}
+.fsel{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#f0e6ff;border-radius:8px;padding:.4rem .8rem;font-size:.8rem;cursor:pointer;transition:border-color .2s,background .2s;outline:none}
+.fsel:hover,.fsel:focus{border-color:#7b1fa2;background:rgba(123,31,162,.15)}
+.fbtn{background:rgba(183,28,28,.2);border:1px solid rgba(183,28,28,.4);color:#ffcdd2;border-radius:8px;padding:.4rem .9rem;font-size:.78rem;cursor:pointer;font-weight:600;transition:background .2s}
+.fbtn:hover{background:rgba(183,28,28,.4)}
+.fbtn.active{background:#b71c1c;border-color:#b71c1c;color:#fff}
+
+/* KPI */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:1rem}
+.kpi{border-radius:14px;padding:1.2rem 1.3rem;border:1px solid rgba(255,255,255,.08);transition:transform .25s,box-shadow .25s;cursor:default}
+.kpi:hover{transform:translateY(-3px);box-shadow:0 8px 28px rgba(0,0,0,.4)}
+.kpi-val{font-size:1.9rem;font-weight:900;line-height:1}
+.kpi-lbl{font-size:.69rem;opacity:.58;margin-top:.35rem;text-transform:uppercase;letter-spacing:.05em}
+.kpi-trend{font-size:.69rem;margin-top:.5rem;font-weight:700}
+.kpi-trend.up{color:#ff6d6d}.kpi-trend.dn{color:#a5d6a7}
+.k1{background:linear-gradient(135deg,#4a0000,#1a0000)}
+.k2{background:linear-gradient(135deg,#1a0030,#080015)}
+.k3{background:linear-gradient(135deg,#1a2000,#080a00)}
+.k4{background:linear-gradient(135deg,#1a1000,#080500)}
+
+/* CHARTS */
+.charts-row{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem}
+@media(max-width:700px){.charts-row{grid-template-columns:1fr}}
+.chart-wrap{width:100%;overflow:hidden}
+svg text{fill:#ccc}
+.axis line,.axis path{stroke:rgba(255,255,255,.1)}
+
+/* TOOLTIP */
+.ttip{position:fixed;background:rgba(8,0,18,.95);border:1px solid rgba(183,28,28,.5);border-radius:9px;padding:.65rem 1rem;font-size:.8rem;pointer-events:none;z-index:9999;opacity:0;transition:opacity .12s;max-width:260px;line-height:1.55}
+
+/* DETAIL PANEL */
+#detail-panel{position:fixed;right:0;top:0;width:340px;height:100vh;background:rgba(12,0,24,.97);border-left:1px solid rgba(123,31,162,.3);z-index:500;transform:translateX(100%);transition:transform .35s cubic-bezier(.16,1,.3,1);overflow-y:auto;padding:1.5rem}
+#detail-panel.open{transform:none}
+#detail-close{position:absolute;top:1rem;right:1rem;background:rgba(255,255,255,.08);border:none;color:#f0e6ff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center}
+#detail-close:hover{background:rgba(183,28,28,.4)}
+.dp-title{font-size:1rem;font-weight:800;color:#ffcdd2;margin-bottom:.3rem;padding-right:2rem}
+.dp-sub{font-size:.72rem;opacity:.45;margin-bottom:1.2rem}
+.dp-metric{background:rgba(255,255,255,.04);border-radius:10px;padding:.9rem 1rem;margin-bottom:.8rem;border:1px solid rgba(255,255,255,.07)}
+.dp-metric .dm-val{font-size:1.5rem;font-weight:900;color:#ff6d6d}
+.dp-metric .dm-lbl{font-size:.68rem;opacity:.5;text-transform:uppercase;letter-spacing:.06em;margin-top:.2rem}
+.dp-bar-wrap{margin-top:.6rem}
+.dp-bar-lbl{font-size:.72rem;opacity:.6;display:flex;justify-content:space-between;margin-bottom:.3rem}
+.dp-bar{height:6px;border-radius:3px;background:linear-gradient(90deg,#7b1fa2,#b71c1c);transition:width .6s ease}
+
+/* MAP */
+#map-svg{width:100%;height:320px}
+.hex{cursor:pointer;transition:opacity .2s}
+.hex:hover{opacity:.85;stroke:#fff;stroke-width:1.5}
+.map-legend{display:flex;gap:1rem;margin-top:.8rem;font-size:.72rem;opacity:.6;flex-wrap:wrap;align-items:center}
+.leg-swatch{width:14px;height:14px;border-radius:3px;flex-shrink:0}
+
+/* TABLE */
+table{width:100%;border-collapse:collapse;font-size:.81rem}
+th{text-align:left;padding:.55rem .75rem;border-bottom:1px solid rgba(255,255,255,.13);font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:#ce93d8;font-weight:600}
+td{padding:.52rem .75rem;border-bottom:1px solid rgba(255,255,255,.05);transition:background .15s}
+tr{cursor:pointer}
+tr:hover td{background:rgba(123,31,162,.12)}
+tr.selected td{background:rgba(183,28,28,.12);border-left:2px solid #b71c1c}
+.bar-cell{display:flex;align-items:center;gap:.5rem}
+.mini-bar{height:6px;border-radius:3px;flex-shrink:0;transition:width .5s ease}
+.tag{display:inline-block;padding:.13rem .42rem;border-radius:4px;font-size:.67rem;font-weight:700}
+.tag-up{background:#b71c1c33;color:#ff8a80}
+.tag-dn{background:#1b5e2033;color:#a5d6a7}
+.tag-neu{background:#37474f55;color:#b0bec5}
+
+/* LEGAL */
+.legal-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:.9rem}
+.legal-card{border-radius:12px;padding:1.05rem;border:1px solid rgba(255,255,255,.08);cursor:pointer;transition:transform .22s,border-color .22s,box-shadow .22s}
+.legal-card:hover{transform:translateY(-4px);border-color:rgba(123,31,162,.5);box-shadow:0 8px 24px rgba(74,20,140,.25)}
+.legal-card h4{font-size:.88rem;font-weight:700;margin-bottom:.28rem}
+.legal-card .year{font-size:.66rem;opacity:.42;margin-bottom:.55rem}
+.legal-card ul{font-size:.71rem;opacity:.68;padding-left:1rem;line-height:1.7}
+.score-bar{height:4px;border-radius:2px;margin-top:.75rem;background:linear-gradient(90deg,#7b1fa2,#b71c1c);transition:width .7s ease}
+.lc1{background:linear-gradient(135deg,#1a0030,#0d0020)}
+.lc2{background:linear-gradient(135deg,#001a30,#000d20)}
+.lc3{background:linear-gradient(135deg,#001a10,#000d08)}
+.lc4{background:linear-gradient(135deg,#1a1000,#0d0800)}
+.lc5{background:linear-gradient(135deg,#1a0010,#0d0008)}
+.lc6{background:linear-gradient(135deg,#0a1a00,#050d00)}
+
+/* AI */
+.ai-box{background:rgba(74,20,140,.1);border:1px solid rgba(123,31,162,.3);border-radius:14px;padding:1.4rem}
+.ai-box textarea{width:100%;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:.8rem;color:#f0e6ff;font-size:.84rem;resize:vertical;min-height:88px;font-family:inherit;outline:none;transition:border-color .2s}
+.ai-box textarea:focus{border-color:#7b1fa2}
+.ai-btn{background:linear-gradient(135deg,#7b1fa2,#b71c1c);border:none;color:#fff;padding:.62rem 1.3rem;border-radius:8px;cursor:pointer;font-weight:700;font-size:.84rem;margin-top:.65rem;transition:opacity .2s,transform .15s}
+.ai-btn:hover{opacity:.85;transform:translateY(-1px)}.ai-btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
+.ai-response{margin-top:1rem;background:rgba(0,0,0,.3);border-radius:8px;padding:1rem;font-size:.84rem;line-height:1.75;border-left:3px solid #7b1fa2;min-height:60px;white-space:pre-wrap}
+.ai-label{font-size:.66rem;text-transform:uppercase;letter-spacing:.08em;opacity:.4;margin-bottom:.35rem}
+.chip-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.8rem}
+.chip{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:.28rem .75rem;font-size:.73rem;cursor:pointer;transition:background .18s,border-color .18s}
+.chip:hover{background:rgba(123,31,162,.25);border-color:#7b1fa2}
+</style>
+</head>
+<body>
+
+<!-- DETAIL PANEL -->
+<div id="detail-panel">
+  <button id="detail-close" onclick="closeDetail()">x</button>
+  <div class="dp-title" id="dp-title">—</div>
+  <div class="dp-sub" id="dp-sub">—</div>
+  <div id="dp-body"></div>
+</div>
+
+<!-- HERO -->
+<section id="hero">
+  <div id="hero-bg"></div>
+  <canvas id="hero-canvas"></canvas>
+  <div id="hero-content">
+    <div style="font-size:.7rem;letter-spacing:.2em;opacity:.45;text-transform:uppercase;margin-bottom:.8rem">Observatorio Digital - America Latina - 2023-2025</div>
+    <h1>Observatorio da<br><span>Violencia Politica de Genero</span></h1>
+    <p>Monitoramento de ataques digitais contra mulheres na politica. Dados, padroes, plataformas e marcos regulatorios.</p>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="val" id="cnt1">0</div><div class="lbl">Incidentes</div></div>
+      <div class="hero-stat"><div class="val" id="cnt2">0</div><div class="lbl">Paises</div></div>
+      <div class="hero-stat"><div class="val" id="cnt3">0</div><div class="lbl">Plataformas</div></div>
+      <div class="hero-stat"><div class="val" id="cnt4">0%</div><div class="lbl">Taxa remocao</div></div>
+    </div>
+  </div>
+  <div class="scroll-hint">role para explorar</div>
+</section>
+
+<div id="main">
+
+<!-- KPI -->
+<section class="reveal">
+  <h2 class="sec-title">Indicadores Gerais 2024</h2>
+  <div class="kpi-grid">
+    <div class="kpi k1" onclick="openDetail('kpi','Tuites Ofensivos',{sub:'Campanha presidencial brasileira 2022',metrics:[{v:'6,66M',l:'Tuites ofensivos em 2 dias'},{v:'Simone Tebet + Soraya Thronicke',l:'Principais alvos'},{v:'2 dias',l:'Duracao do pico'}],bars:[{l:'Volume vs media anual',p:95},{l:'Parcela identificada como coordenada',p:62}]})">
+      <div class="kpi-val">6,66M</div><div class="kpi-lbl">Tuites ofensivos em 2 dias (2022)</div><div class="kpi-trend up">pico historico — clique para detalhar</div></div>
+    <div class="kpi k2" onclick="openDetail('kpi','Penalidade de Visibilidade',{sub:'Comparativo por identidade e orientacao politica',metrics:[{v:'4,7x',l:'Mulheres negras de esquerda vs homens brancos'},{v:'2,3x',l:'Mulheres de esquerda (geral)'},{v:'1,8x',l:'Mulheres de direita'}],bars:[{l:'Mulheres negras de esquerda',p:94},{l:'Mulheres de esquerda',p:46},{l:'Mulheres de direita',p:36}]})">
+      <div class="kpi-val">4,7x</div><div class="kpi-lbl">Penalidade de visibilidade mulheres negras</div><div class="kpi-trend up">vs homens brancos — clique para detalhar</div></div>
+    <div class="kpi k3" onclick="openDetail('kpi','Taxa de Remocao PT/ES',{sub:'Comparativo com conteudo em ingles',metrics:[{v:'25%',l:'Taxa media de remocao PT/ES'},{v:'45%',l:'Taxa media de remocao em ingles'},{v:'-20 p.p.',l:'Deficit de protecao'}],bars:[{l:'Remocao PT/ES',p:25},{l:'Remocao EN',p:45},{l:'Meta: benchmark ideal',p:80}]})">
+      <div class="kpi-val">25%</div><div class="kpi-lbl">Taxa media de remocao PT/ES</div><div class="kpi-trend dn">20 p.p. abaixo do ingles — clique</div></div>
+    <div class="kpi k4" onclick="openDetail('kpi','Normalizacao Estrutural',{sub:'Patamar de violencia pos-2022',metrics:[{v:'+40%',l:'Acima da media pre-2022'},{v:'114',l:'Casos no 1T2023 (ano nao eleitoral)'},{v:'+23%',l:'Crescimento anual Brasil 2024'}],bars:[{l:'Patamar atual vs pre-2022',p:72},{l:'Periodos eleitorais vs baseline',p:95}]})">
+      <div class="kpi-val">+40%</div><div class="kpi-lbl">Patamar acima da media pre-2022</div><div class="kpi-trend up">normalizacao estrutural — clique</div></div>
+  </div>
+</section>
+
+<!-- AREA CHART -->
+<section class="reveal">
+  <h2 class="sec-title">Volume de Ataques Digitais — Ultimos 8 Trimestres</h2>
+  <div class="filter-bar">
+    <label>Pais:</label>
+    <select class="fsel" id="area-country" onchange="drawArea()">
+      <option value="all">Todos</option>
+      <option value="BR">Brasil</option>
+      <option value="MX">Mexico</option>
+      <option value="AR">Argentina</option>
+      <option value="CL">Chile</option>
+    </select>
+    <label>Metrica:</label>
+    <button class="fbtn active" onclick="toggleMetric(this,'attacks')">Ataques</button>
+    <button class="fbtn active" onclick="toggleMetric(this,'toxicity')">Toxicidade</button>
+    <button class="fbtn active" onclick="toggleMetric(this,'mentions')">Mencoes</button>
+  </div>
+  <div class="card">
+    <div id="area-chart" class="chart-wrap"></div>
+    <div style="display:flex;gap:1.4rem;flex-wrap:wrap;margin-top:.9rem;font-size:.72rem;opacity:.6">
+      <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:11px;height:9px;background:#c62828;border-radius:2px"></span>Volume ataques</span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:14px;height:2px;background:#ce93d8"></span>Toxicidade</span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:11px;height:9px;background:#546e7a55;border-radius:2px"></span>Mencoes</span>
+      <span style="opacity:.5">Clique em um trimestre para detalhar</span>
+    </div>
+  </div>
+</section>
+
+<!-- MAP + TABLE -->
+<section class="reveal slide-left">
+  <h2 class="sec-title">Incidencia por Pais — Mapa Interativo</h2>
+  <div class="filter-bar">
+    <label>Ordenar por:</label>
+    <select class="fsel" id="sort-by" onchange="renderTable()">
+      <option value="idx">Indice de incidencia</option>
+      <option value="yoy">Crescimento YoY</option>
+      <option value="c">Nome</option>
+    </select>
+    <label>Periodo:</label>
+    <select class="fsel" id="period-filter" onchange="renderTable()">
+      <option value="2024">2024</option>
+      <option value="2023">2023</option>
+      <option value="2022">2022</option>
+    </select>
+  </div>
+  <div class="charts-row">
+    <div class="card">
+      <svg id="map-svg" viewBox="0 0 600 300"></svg>
+      <div class="map-legend">
+        <span style="opacity:.6;font-size:.7rem">Tamanho = incidencia / 100k</span>
+        <span style="display:flex;align-items:center;gap:4px"><span class="leg-swatch" style="background:#d32f2f"></span>Alto</span>
+        <span style="display:flex;align-items:center;gap:4px"><span class="leg-swatch" style="background:#fbc02d"></span>Medio</span>
+        <span style="display:flex;align-items:center;gap:4px"><span class="leg-swatch" style="background:#388e3c"></span>Baixo</span>
+        <span style="opacity:.45;font-size:.68rem">Clique num pais para detalhar</span>
+      </div>
+    </div>
+    <div class="card" style="overflow:auto">
+      <table>
+        <thead><tr><th>Pais</th><th>Indice/100k</th><th>YoY</th><th>Cobertura</th></tr></thead>
+        <tbody id="ctable"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- SANKEY -->
+<section class="reveal">
+  <h2 class="sec-title">Fluxos da Violencia — Quem produz? Quem paga o custo?</h2>
+  <div class="card"><div id="sankey-chart" class="chart-wrap"></div>
+  <div style="font-size:.7rem;opacity:.4;margin-top:.6rem">Passe o mouse sobre os fluxos para ver a conexao. Clique nos nos para detalhar.</div>
+  </div>
+</section>
+
+<!-- BAR -->
+<section class="reveal slide-right">
+  <h2 class="sec-title">Tipos de Violencia — Distribuicao Regional</h2>
+  <div class="filter-bar">
+    <label>Plataforma:</label>
+    <select class="fsel" id="bar-platform" onchange="drawBar()">
+      <option value="all">Todas</option>
+      <option value="X">X (Twitter)</option>
+      <option value="Meta">Meta</option>
+      <option value="TikTok">TikTok</option>
+      <option value="YouTube">YouTube</option>
+    </select>
+  </div>
+  <div class="card"><div id="bar-chart" class="chart-wrap"></div></div>
+</section>
+
+<!-- RADAR -->
+<section class="reveal">
+  <h2 class="sec-title">Efetividade das Plataformas — Radar Comparativo</h2>
+  <div class="charts-row">
+    <div class="card">
+      <div id="radar-chart" class="chart-wrap"></div>
+    </div>
+    <div class="card" style="overflow:auto">
+      <table>
+        <thead><tr><th>Plataforma</th><th>Remocao</th><th>Resposta</th><th>API</th><th>Score</th></tr></thead>
+        <tbody>
+          <tr onclick="openDetail('plat','YouTube',{sub:'Melhor score geral entre as plataformas',metrics:[{v:'35-42%',l:'Taxa de remocao PT/ES'},{v:'48-96h',l:'Tempo medio de resposta'},{v:'3.2/5',l:'Score geral'}],bars:[{l:'Clareza de politica',p:40},{l:'Velocidade de resposta',p:60},{l:'Acessibilidade de API',p:80},{l:'Penalidade de visibilidade',p:80}]})"><td>YouTube</td><td><span class="tag tag-dn">35-42%</span></td><td>48-96h</td><td><span class="tag tag-dn">Aberta</span></td><td><div class="bar-cell"><div class="mini-bar" style="width:64px;background:#388e3c"></div>3.2</div></td></tr>
+          <tr onclick="openDetail('plat','Meta (FB/IG)',{sub:'Moderacao inconsistente para PT/ES',metrics:[{v:'28-35%',l:'Taxa de remocao PT/ES'},{v:'24-72h',l:'Tempo medio de resposta'},{v:'3.0/5',l:'Score geral'}],bars:[{l:'Clareza de politica',p:60},{l:'Velocidade de resposta',p:60},{l:'Acessibilidade de API',p:40},{l:'Penalidade de visibilidade',p:80}]})"><td>Meta (FB/IG)</td><td><span class="tag tag-up">28-35%</span></td><td>24-72h</td><td><span class="tag tag-neu">Restrita</span></td><td><div class="bar-cell"><div class="mini-bar" style="width:60px;background:#1565c0"></div>3.0</div></td></tr>
+          <tr onclick="openDetail('plat','TikTok',{sub:'API indisponivel na America Latina',metrics:[{v:'22-28%',l:'Taxa de remocao PT/ES'},{v:'12-48h',l:'Tempo medio de resposta'},{v:'2.5/5',l:'Score geral'}],bars:[{l:'Clareza de politica',p:40},{l:'Velocidade de resposta',p:80},{l:'Acessibilidade de API',p:20},{l:'Penalidade de visibilidade',p:80}]})"><td>TikTok</td><td><span class="tag tag-up">22-28%</span></td><td>12-48h</td><td><span class="tag tag-up">Indisponivel (AL)</span></td><td><div class="bar-cell"><div class="mini-bar" style="width:50px;background:#f9a825"></div>2.5</div></td></tr>
+          <tr onclick="openDetail('plat','Reddit',{sub:'Moderacao dependente de voluntarios',metrics:[{v:'8-15%',l:'Taxa de remocao PT/ES'},{v:'Variavel',l:'Tempo medio de resposta'},{v:'2.3/5',l:'Score geral'}],bars:[{l:'Clareza de politica',p:40},{l:'Velocidade de resposta',p:40},{l:'Acessibilidade de API',p:40},{l:'Penalidade de visibilidade',p:60}]})"><td>Reddit</td><td><span class="tag tag-up">8-15%</span></td><td>Variavel</td><td><span class="tag tag-neu">Restrita</span></td><td><div class="bar-cell"><div class="mini-bar" style="width:46px;background:#6d4c41"></div>2.3</div></td></tr>
+          <tr onclick="openDetail('plat','X (Twitter)',{sub:'Pior score - reducao de 80% da equipe de seguranca',metrics:[{v:'12-18%',l:'Taxa de remocao PT/ES'},{v:'72-168h',l:'Tempo medio de resposta'},{v:'1.7/5',l:'Score geral'}],bars:[{l:'Clareza de politica',p:20},{l:'Velocidade de resposta',p:20},{l:'Acessibilidade de API',p:20},{l:'Penalidade de visibilidade',p:100}]})"><td>X (Twitter)</td><td><span class="tag tag-up">12-18%</span></td><td>72-168h</td><td><span class="tag tag-up">Proibitiva</span></td><td><div class="bar-cell"><div class="mini-bar" style="width:34px;background:#b71c1c"></div>1.7</div></td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:.68rem;opacity:.35;margin-top:.8rem">Clique em qualquer linha para detalhar</div>
+    </div>
+  </div>
+</section>
+
+<!-- LEGAL -->
+<section class="reveal">
+  <h2 class="sec-title">Marcos Regulatorios — Clique para detalhar</h2>
+  <div class="legal-grid" id="legal-grid"></div>
+</section>
+
+<!-- AI -->
+<section class="reveal">
+  <h2 class="sec-title">Analise com IA</h2>
+  <div class="ai-box">
+    <div class="ai-label">Perguntas sugeridas</div>
+    <div class="chip-row">
+      <div class="chip" onclick="setQ('Quais os principais padroes de ataque a mulheres negras na politica?')">Mulheres negras</div>
+      <div class="chip" onclick="setQ('Como a Lei 14.192/2021 impacta denuncias no Brasil?')">Lei 14.192</div>
+      <div class="chip" onclick="setQ('Por que o X/Twitter tem o pior score de moderacao?')">X/Twitter</div>
+      <div class="chip" onclick="setQ('Qual a diferenca de incidencia entre Mexico e Uruguai?')">Mexico vs Uruguai</div>
+      <div class="chip" onclick="setQ('O que e a penalidade de visibilidade?')">Penalidade de visibilidade</div>
+    </div>
+    <div class="ai-label">Sua pergunta</div>
+    <textarea id="ai-input" placeholder="Digite sua pergunta sobre violencia politica de genero na America Latina..."></textarea>
+    <br><button class="ai-btn" id="ai-btn" onclick="askAI()">Analisar com IA &nbsp;(Ctrl+Enter)</button>
+    <div class="ai-label" style="margin-top:1.2rem">Resposta</div>
+    <div class="ai-response" id="ai-response">A IA do Observatorio ira responder com base nos dados e pesquisas sobre violencia politica de genero.</div>
+  </div>
+</section>
+
+<footer style="text-align:center;padding:2rem;font-size:.78rem;border-top:1px solid rgba(255,255,255,.15);margin-top:1.5rem;color:#e0d0ff">
+  <strong style="font-size:.88rem;color:#ffcdd2;display:block;margin-bottom:.3rem">Dra. Barbara Coelho Neves</strong>
+  <span style="color:#ce93d8;font-size:.78rem">Coordenadora do LTI Digital — Universidade Federal da Bahia (UFBA)</span>
+  <br><br>
+  <span style="color:#b0a0cc;font-size:.72rem">Fontes: InternetLab &nbsp;·&nbsp; Instituto Marielle Franco &nbsp;·&nbsp; MonitorA &nbsp;·&nbsp; IDEA Report &nbsp;·&nbsp; Frontiers &amp; Academic Reports &nbsp;·&nbsp; Government Repositories &nbsp;·&nbsp; Platform Transparency Reports &nbsp;·&nbsp; 2025</span>
+</footer>
+</div>
+
+<div class="ttip" id="ttip"></div>
+
+<script>
+// ── DATA ─────────────────────────────────────────────────────
+var quarters = ['2023-Q1','2023-Q2','2023-Q3','2023-Q4','2024-Q1','2024-Q2','2024-Q3','2024-Q4'];
+var dataByCountry = {
+  all: {attacks:[1800,2420,2780,3980,3100,4600,5100,4700], toxicity:[52,58,61,79,68,82,88,84], mentions:[8000,10500,12000,18500,14000,21000,26000,22000]},
+  BR:  {attacks:[800,1100,1250,1900,1400,2300,2600,2800], toxicity:[48,54,57,72,63,78,85,81], mentions:[3500,4800,5500,8500,6200,10000,12000,11000]},
+  MX:  {attacks:[500,650,780,1100,900,1300,1500,1200], toxicity:[55,62,65,83,72,86,91,87], mentions:[2000,2900,3200,5000,3800,5500,7000,5800]},
+  AR:  {attacks:[300,420,500,680,560,700,750,500], toxicity:[50,55,58,74,65,76,80,72], mentions:[1500,2100,2500,3500,2800,3500,4000,3000]},
+  CL:  {attacks:[200,250,250,300,240,300,255,200], toxicity:[44,48,50,60,54,65,68,62], mentions:[1000,1200,1800,1500,1400,2200,3200,2200]}
+};
+var metrics = {attacks:true, toxicity:true, mentions:true};
+
+var countries = [
+  {c:'Mexico',   idx:1203, yoy:34,  cov:'Media-Alta', key:'MX', x:120, y:120},
+  {c:'Peru',     idx:892,  yoy:41,  cov:'Baixa-Media', key:'PE', x:185, y:195},
+  {c:'Argentina',idx:956,  yoy:-8,  cov:'Media', key:'AR', x:195, y:250},
+  {c:'Brasil',   idx:847,  yoy:18,  cov:'Alta', key:'BR', x:265, y:190},
+  {c:'Colombia', idx:678,  yoy:22,  cov:'Media', key:'CO', x:165, y:155},
+  {c:'Chile',    idx:534,  yoy:12,  cov:'Media', key:'CL', x:175, y:255},
+  {c:'Bolivia',  idx:445,  yoy:7,   cov:'Baixa', key:'BO', x:210, y:215},
+  {c:'Uruguai',  idx:312,  yoy:3,   cov:'Baixa', key:'UY', x:230, y:265},
+];
+var periodMod = {2024:1, 2023:0.82, 2022:0.71};
+var maxIdx = 1203;
+
+var atypes = {
+  all:    [{type:'Desqualificacao profissional',pct:23,col:'#7986cb'},{type:'Sexualizacao',pct:19,col:'#e57373'},{type:'Ameaca de violencia sexual',pct:15,col:'#c62828'},{type:'Quest. de legitimidade',pct:14,col:'#ffb74d'},{type:'Ataque a maternidade',pct:12,col:'#ba68c8'},{type:'Racismo intersecto',pct:9,col:'#4db6ac'},{type:'LGBTfobia',pct:5,col:'#f06292'},{type:'Ageismo',pct:3,col:'#90a4ae'}],
+  X:      [{type:'Quest. de legitimidade',pct:28,col:'#ffb74d'},{type:'Desqualificacao profissional',pct:22,col:'#7986cb'},{type:'Ameaca de violencia sexual',pct:18,col:'#c62828'},{type:'Sexualizacao',pct:14,col:'#e57373'},{type:'Racismo intersecto',pct:10,col:'#4db6ac'},{type:'Ataque a maternidade',pct:5,col:'#ba68c8'},{type:'LGBTfobia',pct:3,col:'#f06292'}],
+  Meta:   [{type:'Ataque a maternidade',pct:24,col:'#ba68c8'},{type:'Desqualificacao profissional',pct:20,col:'#7986cb'},{type:'Sexualizacao',pct:18,col:'#e57373'},{type:'Quest. de legitimidade',pct:14,col:'#ffb74d'},{type:'Racismo intersecto',pct:12,col:'#4db6ac'},{type:'LGBTfobia',pct:7,col:'#f06292'},{type:'Ameaca de violencia sexual',pct:5,col:'#c62828'}],
+  TikTok: [{type:'Sexualizacao',pct:34,col:'#e57373'},{type:'LGBTfobia',pct:18,col:'#f06292'},{type:'Desqualificacao profissional',pct:16,col:'#7986cb'},{type:'Ameaca de violencia sexual',pct:14,col:'#c62828'},{type:'Ageismo',pct:10,col:'#90a4ae'},{type:'Racismo intersecto',pct:8,col:'#4db6ac'}],
+  YouTube:[{type:'Desqualificacao profissional',pct:26,col:'#7986cb'},{type:'Quest. de legitimidade',pct:22,col:'#ffb74d'},{type:'Sexualizacao',pct:16,col:'#e57373'},{type:'Racismo intersecto',pct:14,col:'#4db6ac'},{type:'Ataque a maternidade',pct:12,col:'#ba68c8'},{type:'Ameaca de violencia sexual',pct:10,col:'#c62828'}]
+};
+
+// ── HERO CANVAS ────────────────────────────────────────────
+var hc = document.getElementById('hero-canvas');
+var hx = hc.getContext('2d');
+function rsz(){hc.width=window.innerWidth;hc.height=window.innerHeight;}
+rsz(); window.addEventListener('resize', rsz);
+var ht = 0;
+function drawHero(){
+  hx.clearRect(0,0,hc.width,hc.height);
+  var cx=hc.width/2, cy=hc.height/2, sc=Math.min(hc.width,hc.height)*0.36;
+  var layers=[[0,0,0.9,'#1a237e'],[12,6,0.45,'#37474f'],[-10,8,0.28,'#4a148c']];
+  for(var li=0;li<layers.length;li++){
+    var L=layers[li];
+    hx.save(); hx.translate(cx+L[0],cy+L[1]);
+    hx.globalAlpha=L[2]*(0.7+0.15*Math.sin(ht*0.7));
+    hx.fillStyle=L[3];
+    hx.beginPath(); hx.arc(0,-sc*0.52,sc*0.13,0,Math.PI*2); hx.fill();
+    hx.beginPath();
+    hx.moveTo(-sc*0.12,-sc*0.38);
+    hx.bezierCurveTo(-sc*0.22,-sc*0.1,-sc*0.24,sc*0.15,-sc*0.18,sc*0.5);
+    hx.lineTo(sc*0.18,sc*0.5);
+    hx.bezierCurveTo(sc*0.24,sc*0.15,sc*0.22,-sc*0.1,sc*0.12,-sc*0.38);
+    hx.closePath(); hx.fill(); hx.restore();
+  }
+  for(var gi=0;gi<7;gi++){
+    var gy=Math.random()*hc.height, gw=Math.random()*hc.width*0.5+40;
+    hx.globalAlpha=Math.random()*0.14;
+    hx.fillStyle=Math.random()>0.5?'#ff006699':'#4a148c99';
+    hx.fillRect((hc.width-gw)*Math.random(),gy,gw,1+Math.random()*2);
+  }
+  hx.globalAlpha=1; ht+=0.03;
+  requestAnimationFrame(drawHero);
+}
+drawHero();
+
+// ── COUNTERS ────────────────────────────────────────────────
+function animCount(el,target,suffix,dur){
+  var s=null;
+  function step(ts){
+    if(!s)s=ts;
+    var p=Math.min((ts-s)/dur,1);
+    var v=Math.floor(p*target);
+    el.textContent=(v>=1000?v.toLocaleString('pt-BR'):v)+suffix;
+    if(p<1)requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+setTimeout(function(){
+  animCount(document.getElementById('cnt1'),7200000,'',2000);
+  animCount(document.getElementById('cnt2'),8,'',900);
+  animCount(document.getElementById('cnt3'),5,'',1000);
+  animCount(document.getElementById('cnt4'),25,'%',1400);
+},400);
+
+// ── TOOLTIP ─────────────────────────────────────────────────
+var tip=document.getElementById('ttip');
+function showTip(e,html){tip.innerHTML=html;tip.style.opacity=1;mvTip(e);}
+function mvTip(e){tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY-10)+'px';}
+function hideTip(){tip.style.opacity=0;}
+
+// ── SCROLL REVEAL ────────────────────────────────────────────
+var ro=new IntersectionObserver(function(entries){
+  entries.forEach(function(en){if(en.isIntersecting)en.target.classList.add('visible');});
+},{threshold:0.1});
+document.querySelectorAll('.reveal').forEach(function(el){ro.observe(el);});
+
+// ── DETAIL PANEL ─────────────────────────────────────────────
+function openDetail(type,title,data){
+  document.getElementById('dp-title').textContent=title;
+  document.getElementById('dp-sub').textContent=data.sub||'';
+  var html='';
+  if(data.metrics){
+    data.metrics.forEach(function(m){
+      html+='<div class="dp-metric"><div class="dm-val">'+m.v+'</div><div class="dm-lbl">'+m.l+'</div></div>';
+    });
+  }
+  if(data.bars){
+    html+='<div class="dp-bar-wrap">';
+    data.bars.forEach(function(b){
+      html+='<div class="dp-bar-lbl"><span>'+b.l+'</span><span>'+b.p+'%</span></div><div style="background:rgba(255,255,255,.08);border-radius:3px;height:6px;margin-bottom:.7rem"><div class="dp-bar" style="width:0%" data-p="'+b.p+'"></div></div>';
+    });
+    html+='</div>';
+  }
+  document.getElementById('dp-body').innerHTML=html;
+  document.getElementById('detail-panel').classList.add('open');
+  setTimeout(function(){
+    document.querySelectorAll('.dp-bar').forEach(function(b){
+      b.style.width=b.getAttribute('data-p')+'%';
+    });
+  },100);
+}
+function closeDetail(){document.getElementById('detail-panel').classList.remove('open');}
+
+// ── METRIC TOGGLE ────────────────────────────────────────────
+function toggleMetric(btn,key){
+  metrics[key]=!metrics[key];
+  btn.classList.toggle('active',metrics[key]);
+  drawArea();
+}
+
+// ── AREA CHART ───────────────────────────────────────────────
+function drawArea(){
+  var country=document.getElementById('area-country').value;
+  var d=dataByCountry[country]||dataByCountry['all'];
+  var el=document.getElementById('area-chart');
+  var W=el.clientWidth||760, H=250;
+  el.innerHTML='';
+  var svg=d3.select(el).append('svg').attr('viewBox','0 0 '+W+' '+H).style('width','100%').style('height',H);
+  var m={top:20,right:48,bottom:34,left:52};
+  var w=W-m.left-m.right, h=H-m.top-m.bottom;
+  var g=svg.append('g').attr('transform','translate('+m.left+','+m.top+')');
+  var x=d3.scaleBand().domain(quarters).range([0,w]).padding(0.05);
+  var yA=d3.scaleLinear().domain([0,6000]).range([h,0]);
+  var yM=d3.scaleLinear().domain([0,30000]).range([h,0]);
+  var yT=d3.scaleLinear().domain([0,100]).range([h,0]);
+  g.append('g').attr('class','axis').attr('transform','translate(0,'+h+')').call(d3.axisBottom(x).tickSize(0)).select('.domain').remove();
+  g.append('g').attr('class','axis').call(d3.axisLeft(yA).ticks(4).tickFormat(function(v){return v/1000+'k';})).select('.domain').remove();
+  g.selectAll('.axis text').style('fill','#aaa').style('font-size','10px');
+  g.append('g').selectAll('line').data(yA.ticks(4)).enter().append('line')
+    .attr('x1',0).attr('x2',w).attr('y1',function(v){return yA(v);}).attr('y2',function(v){return yA(v);}).attr('stroke','rgba(255,255,255,.06)');
+
+  var defs=svg.append('defs');
+  var gm=defs.append('linearGradient').attr('id','gm2').attr('x1',0).attr('x2',0).attr('y1',0).attr('y2',1);
+  gm.append('stop').attr('offset','0%').attr('stop-color','#546e7a').attr('stop-opacity',.32);
+  gm.append('stop').attr('offset','100%').attr('stop-color','#546e7a').attr('stop-opacity',.02);
+  var ga=defs.append('linearGradient').attr('id','ga2').attr('x1',0).attr('x2',0).attr('y1',0).attr('y2',1);
+  ga.append('stop').attr('offset','0%').attr('stop-color','#c62828').attr('stop-opacity',.6);
+  ga.append('stop').attr('offset','100%').attr('stop-color','#c62828').attr('stop-opacity',.03);
+
+  function xm(i){return x(quarters[i])+x.bandwidth()/2;}
+
+  if(metrics.mentions){
+    var aM=d3.area().x(function(v,i){return xm(i);}).y0(h).y1(function(v,i){return yM(d.mentions[i]);}).curve(d3.curveCatmullRom);
+    g.append('path').datum(d.attacks).attr('d',aM).attr('fill','url(#gm2)');
+  }
+  if(metrics.attacks){
+    var aA=d3.area().x(function(v,i){return xm(i);}).y0(h).y1(function(v,i){return yA(d.attacks[i]);}).curve(d3.curveCatmullRom);
+    g.append('path').datum(d.attacks).attr('d',aA).attr('fill','url(#ga2)');
+    var lA=d3.line().x(function(v,i){return xm(i);}).y(function(v,i){return yA(d.attacks[i]);}).curve(d3.curveCatmullRom);
+    g.append('path').datum(d.attacks).attr('d',lA).attr('fill','none').attr('stroke','#e53935').attr('stroke-width',2);
+    g.selectAll('.dot-a').data(d.attacks).enter().append('circle')
+      .attr('cx',function(v,i){return xm(i);}).attr('cy',function(v,i){return yA(v);})
+      .attr('r',4).attr('fill','#e53935').attr('stroke','#1a0000').attr('stroke-width',1.5).style('cursor','pointer')
+      .on('mousemove',function(e,v,i){
+        var idx=d.attacks.indexOf(v);
+        showTip(e,'<b>'+quarters[idx]+'</b><br>Ataques: <b>'+v.toLocaleString('pt-BR')+'</b>');
+      })
+      .on('click',function(e,v){
+        var idx=d.attacks.indexOf(v);
+        openDetail('q',quarters[idx],{sub:'Detalhe do trimestre selecionado',metrics:[{v:v.toLocaleString('pt-BR'),l:'Ataques digitais'},{v:d.toxicity[idx]+'%',l:'Indice de toxicidade'},{v:d.mentions[idx].toLocaleString('pt-BR'),l:'Mencoes totais'}],bars:[{l:'Volume relativo ao pico',p:Math.round(v/5100*100)},{l:'Toxicidade',p:d.toxicity[idx]}]});
+      })
+      .on('mouseleave',hideTip);
+  }
+  if(metrics.toxicity){
+    var lT=d3.line().x(function(v,i){return xm(i);}).y(function(v,i){return yT(d.toxicity[i]);}).curve(d3.curveCatmullRom);
+    g.append('path').datum(d.toxicity).attr('d',lT).attr('fill','none').attr('stroke','#ce93d8').attr('stroke-width',1.5).attr('stroke-dasharray','4,2');
+  }
+
+  g.selectAll('.hit').data(quarters).enter().append('rect')
+    .attr('x',function(v){return x(v);}).attr('y',0).attr('width',x.bandwidth()).attr('height',h)
+    .attr('fill','transparent').style('cursor','pointer')
+    .on('mousemove',function(e,v){
+      var i=quarters.indexOf(v);
+      showTip(e,'<b>'+v+'</b><br>Ataques: <b>'+d.attacks[i].toLocaleString('pt-BR')+'</b><br>Toxicidade: <b>'+d.toxicity[i]+'%</b>');
+    }).on('mouseleave',hideTip);
+
+  var evts={1:'Eleicoes AR',3:'Pico Historico',5:'2.3M incidentes',6:'Eleicoes MX'};
+  Object.keys(evts).forEach(function(i){
+    var xi=xm(parseInt(i));
+    g.append('line').attr('x1',xi).attr('x2',xi).attr('y1',0).attr('y2',h).attr('stroke','#fbc02d44').attr('stroke-width',1).attr('stroke-dasharray','3,3');
+    g.append('text').attr('x',xi).attr('y',8).attr('text-anchor','middle').attr('font-size',8).attr('fill','#fbc02d88').text(evts[i]);
+  });
+}
+setTimeout(drawArea,200);
+window.addEventListener('resize',drawArea);
+
+// ── MAP ──────────────────────────────────────────────────────
+function colorFor(idx){
+  if(idx>900)return '#d32f2f';
+  if(idx>600)return '#fbc02d';
+  return '#388e3c';
+}
+function drawMap(){
+  var period=parseFloat(document.getElementById('period-filter').value)||2024;
+  var mod=periodMod[period]||1;
+  var svg=d3.select('#map-svg');
+  svg.selectAll('*').remove();
+  // background
+  svg.append('rect').attr('width',600).attr('height',300).attr('fill','rgba(255,255,255,.02)').attr('rx',10);
+  // simple lat/lng to SVG coords for Latin America
+  countries.forEach(function(c){
+    var ridx=Math.round(c.idx*mod);
+    var r=Math.max(14,Math.round(ridx/maxIdx*38));
+    var col=colorFor(ridx);
+    var g=svg.append('g').attr('class','hex').attr('transform','translate('+c.x+','+c.y+')')
+      .on('mousemove',function(e){showTip(e,'<b>'+c.c+'</b><br>Indice: <b>'+ridx+'</b>/100k<br>YoY: <b>'+(c.yoy>0?'+':'')+c.yoy+'%</b>');})
+      .on('mouseleave',hideTip)
+      .on('click',function(){
+        openDetail('country',c.c,{sub:'Indice de incidencia por 100k mulheres online',metrics:[{v:ridx+'/100k',l:'Indice de incidencia'},{v:(c.yoy>0?'+':'')+c.yoy+'%',l:'Crescimento YoY'},{v:c.cov,l:'Cobertura do observatorio'}],bars:[{l:'Indice relativo ao maximo (Mexico)',p:Math.round(ridx/maxIdx*100)},{l:'Crescimento relativo',p:Math.min(Math.abs(c.yoy)*2,100)}]});
+      });
+    // hexagon path
+    var pts=[]; for(var i=0;i<6;i++){var a=Math.PI/180*(60*i-30);pts.push((r*Math.cos(a)).toFixed(1)+','+(r*Math.sin(a)).toFixed(1));}
+    g.append('polygon').attr('points',pts.join(' ')).attr('fill',col).attr('fill-opacity',.7).attr('stroke',col).attr('stroke-width',1);
+    g.append('text').attr('text-anchor','middle').attr('dominant-baseline','middle').attr('font-size',Math.max(8,r*0.38)).attr('fill','#fff').attr('font-weight','600').text(c.key);
+    g.append('text').attr('text-anchor','middle').attr('y',r+10).attr('font-size',7).attr('fill','#ccc').text(ridx);
+  });
+  // ocean background hint
+  svg.append('text').attr('x',520).attr('y',160).attr('font-size',9).attr('fill','rgba(255,255,255,.1)').attr('text-anchor','middle').text('OCEANO');
+  svg.append('text').attr('x',520).attr('y',172).attr('font-size',9).attr('fill','rgba(255,255,255,.1)').attr('text-anchor','middle').text('ATLANTICO');
+  svg.append('text').attr('x',80).attr('y',220).attr('font-size',9).attr('fill','rgba(255,255,255,.1)').attr('text-anchor','middle').text('OCEANO');
+  svg.append('text').attr('x',80).attr('y',232).attr('font-size',9).attr('fill','rgba(255,255,255,.1)').attr('text-anchor','middle').text('PACIFICO');
+}
+setTimeout(drawMap,300);
+
+// ── COUNTRY TABLE ────────────────────────────────────────────
+function renderTable(){
+  var sortBy=document.getElementById('sort-by').value;
+  var period=parseFloat(document.getElementById('period-filter').value)||2024;
+  var mod=periodMod[period]||1;
+  var sorted=countries.slice().sort(function(a,b){
+    if(sortBy==='idx')return b.idx-a.idx;
+    if(sortBy==='yoy')return b.yoy-a.yoy;
+    return a.c.localeCompare(b.c);
+  });
+  var tb=document.getElementById('ctable');
+  tb.innerHTML='';
+  sorted.forEach(function(d){
+    var ridx=Math.round(d.idx*mod);
+    var bw=Math.round(ridx/maxIdx*80);
+    var sign=d.yoy>0?'+':'';
+    var tcls=d.yoy>0?'tag-up':'tag-dn';
+    var tr=document.createElement('tr');
+    tr.innerHTML='<td style="font-weight:600">'+d.c+'</td>'+
+      '<td><div class="bar-cell"><div class="mini-bar" style="width:'+bw+'px;background:linear-gradient(90deg,#b71c1c,#ef9a9a)"></div>'+ridx+'</div></td>'+
+      '<td><span class="tag '+tcls+'">'+sign+d.yoy+'%</span></td>'+
+      '<td style="opacity:.6;font-size:.72rem">'+d.cov+'</td>';
+    tr.addEventListener('click',function(){
+      document.querySelectorAll('#ctable tr').forEach(function(r){r.classList.remove('selected');});
+      tr.classList.add('selected');
+      openDetail('country',d.c,{sub:'Indice de incidencia por 100k mulheres online ('+period+')',metrics:[{v:ridx+'/100k',l:'Indice de incidencia'},{v:sign+d.yoy+'%',l:'Crescimento YoY'},{v:d.cov,l:'Cobertura do observatorio'}],bars:[{l:'Indice relativo ao maximo',p:Math.round(ridx/maxIdx*100)},{l:'Crescimento relativo',p:Math.min(Math.abs(d.yoy)*2,100)}]});
+    });
+    tb.appendChild(tr);
+  });
+  drawMap();
+}
+setTimeout(renderTable,350);
+document.getElementById('period-filter').addEventListener('change',renderTable);
+document.getElementById('sort-by').addEventListener('change',renderTable);
+
+// ── RADAR ────────────────────────────────────────────────────
+function drawRadar(){
+  var el=document.getElementById('radar-chart');
+  var size=Math.min(el.clientWidth||300,300);
+  el.innerHTML='';
+  var svg=d3.select(el).append('svg').attr('viewBox','0 0 '+size+' '+size).style('width','100%').style('height',size);
+  var cx=size/2, cy=size/2, r=size*0.33;
+  var axes=['Definicao','Cobertura','Velocidade','Transparencia','API','Penalidade'];
+  var n=axes.length;
+  var platforms=[
+    {name:'YouTube',vals:[2,3,3,3,4,4],col:'#ef5350'},
+    {name:'Meta',   vals:[3,3,3,3,2,4],col:'#ce93d8'},
+    {name:'TikTok', vals:[2,2,4,2,1,4],col:'#80cbc4'},
+    {name:'X',      vals:[1,1,1,1,1,5],col:'#ff8a65'},
+  ];
+  for(var lv=1;lv<=5;lv++){
+    var pts=[];
+    for(var ai=0;ai<n;ai++){var a=(Math.PI*2/n)*ai-Math.PI/2;pts.push((cx+Math.cos(a)*r*(lv/5)).toFixed(1)+','+(cy+Math.sin(a)*r*(lv/5)).toFixed(1));}
+    svg.append('polygon').attr('points',pts.join(' ')).attr('fill','none').attr('stroke','rgba(255,255,255,.1)').attr('stroke-width',.5);
+  }
+  for(var si=0;si<n;si++){
+    var sa=(Math.PI*2/n)*si-Math.PI/2;
+    svg.append('line').attr('x1',cx).attr('y1',cy).attr('x2',cx+Math.cos(sa)*r).attr('y2',cy+Math.sin(sa)*r).attr('stroke','rgba(255,255,255,.1)');
+    svg.append('text').attr('x',cx+Math.cos(sa)*r*1.18).attr('y',cy+Math.sin(sa)*r*1.18).attr('text-anchor','middle').attr('dominant-baseline','middle').attr('font-size',8.5).attr('fill','#aaa').text(axes[si]);
+  }
+  platforms.forEach(function(p){
+    var ppts=p.vals.map(function(v,i){var pa=(Math.PI*2/n)*i-Math.PI/2;return (cx+Math.cos(pa)*r*(v/5)).toFixed(1)+','+(cy+Math.sin(pa)*r*(v/5)).toFixed(1);});
+    svg.append('polygon').attr('points',ppts.join(' ')).attr('fill',p.col).attr('fill-opacity',.15).attr('stroke',p.col).attr('stroke-width',1.5).style('cursor','pointer')
+      .on('mousemove',function(e){showTip(e,'<b>'+p.name+'</b>');})
+      .on('mouseleave',hideTip);
+  });
+  var lg=svg.append('g').attr('transform','translate(8,'+(size-58)+')');
+  platforms.forEach(function(p,i){
+    lg.append('rect').attr('x',0).attr('y',i*13).attr('width',8).attr('height',8).attr('rx',2).attr('fill',p.col);
+    lg.append('text').attr('x',12).attr('y',i*13+7).attr('font-size',8.5).attr('fill','#ccc').text(p.name);
+  });
+}
+setTimeout(drawRadar,400);
+window.addEventListener('resize',function(){drawArea();drawRadar();drawBar();drawMap();});
+
+// ── SANKEY ───────────────────────────────────────────────────
+function drawSankey(){
+  var el=document.getElementById('sankey-chart');
+  var W=el.clientWidth||760, H=290;
+  el.innerHTML='';
+  var svg=d3.select(el).append('svg').attr('viewBox','0 0 '+W+' '+H).style('width','100%').style('height',H);
+  var m={top:22,right:22,bottom:22,left:22};
+  var w=W-m.left-m.right, h=H-m.top-m.bottom;
+  var g=svg.append('g').attr('transform','translate('+m.left+','+m.top+')');
+  var srcs=[{id:'Atores Politicos',y:.1,h:.18,col:'#1565c0'},{id:'Grupos Coordenados',y:.32,h:.22,col:'#c62828'},{id:'Influenciadores',y:.58,h:.18,col:'#f9a825'},{id:'Plataformas',y:.80,h:.14,col:'#616161'}];
+  var tgts=[{id:'Silenciamento',y:.05,h:.14,col:'#ffecb3'},{id:'Desistencia',y:.22,h:.13,col:'#ffcc80'},{id:'Adoecimento Mental',y:.38,h:.14,col:'#ff8a65'},{id:'Saida das Redes',y:.55,h:.13,col:'#d32f2f'},{id:'Violencia Offline',y:.72,h:.18,col:'#b71c1c'}];
+  var links=[{s:0,t:0,v:.35},{s:0,t:1,v:.2},{s:0,t:4,v:.15},{s:1,t:0,v:.25},{s:1,t:2,v:.4},{s:1,t:3,v:.3},{s:1,t:4,v:.2},{s:2,t:0,v:.3},{s:2,t:2,v:.25},{s:2,t:3,v:.2},{s:3,t:0,v:.15},{s:3,t:1,v:.1},{s:3,t:2,v:.15},{s:3,t:4,v:.1}];
+  var nw=14, sx=0, tx=w-nw;
+  links.forEach(function(l){
+    var sn=srcs[l.s], tn=tgts[l.t];
+    var sy=sn.y*h+sn.h*h/2, ty=tn.y*h+tn.h*h/2;
+    var sw=Math.max(l.v*sn.h*h,2), tw=Math.max(l.v*tn.h*h,2);
+    var p=d3.path();
+    p.moveTo(sx+nw,sy-sw/2);
+    p.bezierCurveTo(sx+nw+(tx-nw)*.45,sy-sw/2,sx+nw+(tx-nw)*.55,ty-tw/2,tx,ty-tw/2);
+    p.lineTo(tx,ty+tw/2);
+    p.bezierCurveTo(sx+nw+(tx-nw)*.55,ty+tw/2,sx+nw+(tx-nw)*.45,sy+sw/2,sx+nw,sy+sw/2);
+    p.closePath();
+    (function(ls,lt){
+      g.append('path').attr('d',p).attr('fill',srcs[ls].col).attr('opacity',.28).style('cursor','pointer')
+        .on('mousemove',function(e){showTip(e,'<b>'+srcs[ls].id+'</b> &rarr; <b>'+tgts[lt].id+'</b>');})
+        .on('mouseleave',hideTip)
+        .on('click',function(){openDetail('flow',srcs[ls].id+' -> '+tgts[lt].id,{sub:'Fluxo de origem para impacto',metrics:[{v:srcs[ls].id,l:'Origem da violencia'},{v:tgts[lt].id,l:'Impacto na vitima'}],bars:[{l:'Intensidade do fluxo',p:Math.round(l.v*100)}]});});
+    })(l.s,l.t);
+  });
+  srcs.forEach(function(n){
+    var ng=g.append('g').style('cursor','pointer')
+      .on('click',function(){openDetail('src',n.id,{sub:'Categoria de origem da violencia politica de genero',metrics:[{v:n.id,l:'Tipo de ator'},{v:'Multiplos impactos',l:'Alcance'}],bars:[{l:'Proporcao do total de violencia',p:Math.round(n.h*100)}]});});
+    ng.append('rect').attr('x',sx).attr('y',n.y*h).attr('width',nw).attr('height',n.h*h).attr('fill',n.col).attr('rx',3);
+    ng.append('text').attr('x',sx+nw+6).attr('y',n.y*h+n.h*h/2).attr('dominant-baseline','middle').attr('font-size',10).attr('fill','#ddd').text(n.id);
+  });
+  tgts.forEach(function(n){
+    var ng=g.append('g').style('cursor','pointer')
+      .on('click',function(){openDetail('tgt',n.id,{sub:'Impacto da violencia politica de genero',metrics:[{v:n.id,l:'Tipo de impacto'},{v:'Multiplas origens',l:'Fontes de violencia'}],bars:[{l:'Proporcao das vitimas afetadas',p:Math.round(n.h*100)}]});});
+    ng.append('rect').attr('x',tx).attr('y',n.y*h).attr('width',nw).attr('height',n.h*h).attr('fill',n.col).attr('rx',3);
+    ng.append('text').attr('x',tx-6).attr('y',n.y*h+n.h*h/2).attr('text-anchor','end').attr('dominant-baseline','middle').attr('font-size',10).attr('fill','#ddd').text(n.id);
+  });
+  g.append('text').attr('x',nw+4).attr('y',-8).attr('font-size',9).attr('fill','#666').text('ORIGENS');
+  g.append('text').attr('x',tx-4).attr('y',-8).attr('text-anchor','end').attr('font-size',9).attr('fill','#666').text('IMPACTOS');
+}
+setTimeout(drawSankey,450);
+
+// ── BAR CHART ────────────────────────────────────────────────
+function drawBar(){
+  var plat=document.getElementById('bar-platform').value;
+  var data=atypes[plat]||atypes['all'];
+  var el=document.getElementById('bar-chart');
+  var W=el.clientWidth||760, H=Math.max(220,data.length*30+50);
+  el.innerHTML='';
+  var svg=d3.select(el).append('svg').attr('viewBox','0 0 '+W+' '+H).style('width','100%').style('height',H);
+  var m={top:10,right:48,bottom:32,left:192};
+  var w=W-m.left-m.right, h=H-m.top-m.bottom;
+  var g=svg.append('g').attr('transform','translate('+m.left+','+m.top+')');
+  var y=d3.scaleBand().domain(data.map(function(d){return d.type;})).range([0,h]).padding(.3);
+  var x=d3.scaleLinear().domain([0,38]).range([0,w]);
+  g.append('g').attr('class','axis').call(d3.axisLeft(y).tickSize(0)).selectAll('text').style('fill','#bbb').style('font-size','10px');
+  g.append('g').attr('class','axis').attr('transform','translate(0,'+h+')').call(d3.axisBottom(x).ticks(5).tickFormat(function(v){return v+'%';})).selectAll('text').style('fill','#888').style('font-size','9px');
+  g.selectAll('.bar').data(data).enter().append('rect')
+    .attr('y',function(d){return y(d.type);}).attr('height',y.bandwidth()).attr('x',0).attr('width',0)
+    .attr('fill',function(d){return d.col;}).attr('rx',3).style('cursor','pointer')
+    .on('mousemove',function(e,d){showTip(e,'<b>'+d.type+'</b><br>'+d.pct+'% dos ataques registrados');})
+    .on('mouseleave',hideTip)
+    .on('click',function(e,d){openDetail('type',d.type,{sub:'Distribuicao por tipo de violencia - '+plat,metrics:[{v:d.pct+'%',l:'Participacao no total'},{v:plat==='all'?'Todas as plataformas':plat,l:'Plataforma'}],bars:[{l:'Prevalencia relativa',p:Math.round(d.pct/data[0].pct*100)}]});})
+    .transition().duration(800).delay(function(d,i){return i*70;}).attr('width',function(d){return x(d.pct);});
+  g.selectAll('.plbl').data(data).enter().append('text')
+    .attr('y',function(d){return y(d.type)+y.bandwidth()/2;}).attr('x',function(d){return x(d.pct)+5;})
+    .attr('dominant-baseline','middle').attr('font-size',10).attr('fill','#ccc').text(function(d){return d.pct+'%';});
+}
+setTimeout(drawBar,500);
+
+// ── LEGAL CARDS ──────────────────────────────────────────────
+var laws=[
+  {c:'Brasil',    y:'Lei 14.192/2021',          items:['Ato ilicito eleitoral','Cobertura digital explicita','Cassacao + inelegibilidade 8 anos'],sc:.70,cls:'lc1',det:{metrics:[{v:'Lei 14.192/2021',l:'Legislacao'},{v:'2021',l:'Ano de aprovacao'},{v:'Media',l:'Nivel de implementacao'}],bars:[{l:'Cobertura de violencia digital',p:75},{l:'Efetividade na implementacao',p:55},{l:'Capacidade de reparacao',p:40}]}},
+  {c:'Mexico',    y:'Decreto 2020 + Prot. 2016', items:['22 supostos tipificados','Ordens de protecao','Design mais exigente da regiao'],sc:.85,cls:'lc2',det:{metrics:[{v:'Decreto 2020',l:'Legislacao principal'},{v:'22',l:'Supostos tipificados'},{v:'Alta',l:'Abrangencia normativa'}],bars:[{l:'Cobertura normativa',p:90},{l:'Mecanismos de protecao',p:80},{l:'Efetividade pratica',p:65}]}},
+  {c:'Bolivia',   y:'Lei 243/2012 (pioneira)',   items:['Primeira lei especifica do mundo','Observatorio de Paridad Democratica','Implementacao ainda fragil'],sc:.65,cls:'lc3',det:{metrics:[{v:'Lei 243/2012',l:'Legislacao'},{v:'2012',l:'Pioneira mundial'},{v:'Fragil',l:'Nivel de implementacao'}],bars:[{l:'Pioneirismo normativo',p:100},{l:'Efetividade na implementacao',p:45},{l:'Celeridade judicial',p:30}]}},
+  {c:'Chile',     y:'Lei 21643/2024',            items:['Mais recente da regiao','Violencia digital explicita','Em fase de implementacao'],sc:.80,cls:'lc4',det:{metrics:[{v:'Lei 21643/2024',l:'Legislacao'},{v:'2024',l:'Mais recente da regiao'},{v:'Em impl.',l:'Status'}],bars:[{l:'Cobertura de violencia digital',p:90},{l:'Mecanismos de implementacao',p:55},{l:'Aprendizado de outras leis',p:80}]}},
+  {c:'Argentina', y:'Lei 26485 + emenda 2019',   items:['Sancoes administrativas','Sem mecanismos de reparacao','Projeto Lei Olimpia pendente'],sc:.55,cls:'lc5',det:{metrics:[{v:'Lei 26485',l:'Legislacao base'},{v:'2019',l:'Emenda de ampliacao'},{v:'Limitada',l:'Cobertura digital'}],bars:[{l:'Abrangencia de genero',p:70},{l:'Mecanismos de reparacao',p:25},{l:'Cobertura digital',p:40}]}},
+  {c:'Uruguai',   y:'Lei 19.580/2018',           items:['Abrange candidatas e eleitas','Alcance mais limitado','Baixa visibilidade internacional'],sc:.50,cls:'lc6',det:{metrics:[{v:'Lei 19.580/2018',l:'Legislacao'},{v:'2018',l:'Ano de aprovacao'},{v:'Baixa',l:'Visibilidade internacional'}],bars:[{l:'Cobertura de candidatas e eleitas',p:70},{l:'Mecanismos de implementacao',p:45},{l:'Visibilidade e reconhecimento',p:25}]}},
+];
+var lg=document.getElementById('legal-grid');
+laws.forEach(function(l){
+  var items=l.items.map(function(i){return '<li>'+i+'</li>';}).join('');
+  var div=document.createElement('div');
+  div.className='legal-card '+l.cls;
+  div.innerHTML='<h4>'+l.c+'</h4><div class="year">'+l.y+'</div><ul>'+items+'</ul><div class="score-bar" style="width:0%" data-w="'+Math.round(l.sc*100)+'%"></div>';
+  div.addEventListener('click',function(){
+    openDetail('law',l.c+' — '+l.y,Object.assign({sub:'Marco regulatorio nacional'},l.det));
+  });
+  lg.appendChild(div);
+});
+// Animate score bars on reveal
+var lro=new IntersectionObserver(function(entries){
+  entries.forEach(function(en){
+    if(en.isIntersecting){
+      en.target.querySelectorAll('.score-bar').forEach(function(b){b.style.width=b.getAttribute('data-w');});
+    }
+  });
+},{threshold:0.2});
+document.querySelectorAll('.legal-grid').forEach(function(el){lro.observe(el);});
+
+// ── CHIPS + AI ────────────────────────────────────────────────
+function setQ(q){document.getElementById('ai-input').value=q;}
+
+async function askAI(){
+  var q=document.getElementById('ai-input').value.trim();
+  if(!q)return;
+  var btn=document.getElementById('ai-btn');
+  var resp=document.getElementById('ai-response');
+  btn.disabled=true; resp.textContent='Analisando...';
+  var sys='Voce e um analista especializado do Observatorio da Violencia Politica de Genero na America Latina. Use os dados:\n'+
+    '- 6,66M tuites ofensivos em 2 dias (Simone Tebet e Soraya Thronicke, 2022)\n'+
+    '- Penalidade: mulheres negras de esquerda 4,7x; mulheres esquerda 2,3x; mulheres direita 1,8x\n'+
+    '- Taxa remocao PT/ES: 25% (vs 45% em ingles)\n'+
+    '- +40% patamar acima da media pre-2022; 114 casos no 1T2023 (ano nao eleitoral)\n'+
+    'TIPOS: Desqualificacao 23%, Sexualizacao 19%, Ameaca sexual 15%, Legitimidade 14%, Maternidade 12%, Racismo 9%, LGBTfobia 5%, Ageismo 3%\n'+
+    'PAISES: Mexico 1203 (+34%), Peru 892 (+41%), Argentina 956 (-8%), Brasil 847 (+18%), Colombia 678 (+22%), Chile 534 (+12%), Bolivia 445 (+7%), Uruguai 312 (+3%)\n'+
+    'PLATAFORMAS: YouTube 3.2/5 (API aberta), Meta 3.0/5 (restrita), TikTok 2.5/5 (API indisponivel AL), Reddit 2.3/5, X 1.7/5 (API proibitiva, reducao 80% equipe de seguranca)\n'+
+    'LEIS: Brasil Lei 14.192/2021, Mexico Decreto 2020 (22 supostos), Bolivia Lei 243/2012 (pioneira mundial), Chile Lei 21643/2024, Argentina Lei 26485, Uruguai Lei 19.580\n'+
+    'Responda em portugues, de forma analitica e precisa. Maximo 250 palavras.';
+  try{
+    var res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:sys,messages:[{role:'user',content:q}]})});
+    var data=await res.json();
+    resp.textContent=(data.content&&data.content[0]&&data.content[0].text)?data.content[0].text:'Nao foi possivel obter resposta.';
+  }catch(e){resp.textContent='Erro ao conectar com a IA.';}
+  btn.disabled=false;
+}
+document.getElementById('ai-input').addEventListener('keydown',function(e){if(e.ctrlKey&&e.key==='Enter')askAI();});
+</script>
+</body>
+</html>
